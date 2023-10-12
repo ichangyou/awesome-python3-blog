@@ -103,9 +103,17 @@ class MyCustomError(BaseException):
     pass
 
 
-
+# ModelMetaclass 是一个元类（metaclass），它继承自Python内置的type类
+# 元类在Python中用于控制类的创建行为。这里，它的主要作用是定义数据库表的结构，并在 Model 类的子类中进行一些初始化工作
 class ModelMetaclass(type):
-
+    '''
+    __new__ 方法中，它会解析 Model 子类的属性，识别哪些属性是数据库表的字段。
+    然后，它会为每个字段构建相关的SQL查询语句，以及处理数据库表的主键。
+    元类会根据 Model 子类的属性生成一些特殊属性，例如 __mappings__ 用于映射字段名和字段类型，
+    __table__ 用于存储表名，__primary_key__ 用于存储主键字段名，以及其他查询操作的SQL语句，
+    如 __select__, __insert__, __update__, 和 __delete__。
+    如果在 Model 子类中没有定义主键字段，或者定义了多个主键字段，它会抛出一个自定义异常 MyCustomError
+    '''
     def __new__(cls, name, bases, attrs):
         if name=='Model':
             return type.__new__(cls, name, bases, attrs)
@@ -140,6 +148,17 @@ class ModelMetaclass(type):
         attrs['__delete__'] = 'delete from `%s` where `%s`=?' % (tableName, primaryKey)
         return type.__new__(cls, name, bases, attrs)
 
+'''
+Model 类是所有数据模型的基类，它继承自Python的 dict 类，因此可以像字典一样存储键-值对。
+它定义了一些特殊方法，如 __getattr__ 和 __setattr__，以使访问和设置对象属性更方便。
+getValue 和 getValueOrDefault 方法用于获取属性的值，如果属性不存在则返回默认值。默认值可以在字段定义中指定。
+findAll 方法用于执行查询操作，查找数据库中的多个对象，并将它们返回为对象列表。
+findNumber 方法用于执行查询操作，返回满足条件的记录数。
+find 方法用于通过主键查找对象。
+save 方法用于将对象保存到数据库中。
+update 方法用于更新数据库中的对象。
+remove 方法用于从数据库中删除对象。
+'''
 class Model(dict, metaclass=ModelMetaclass):
 
     def __init__(self, **kw):
