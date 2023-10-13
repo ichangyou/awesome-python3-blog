@@ -14,7 +14,7 @@ async def create_pool(loop, **kw):
     logging.info('create database connection pool...')
     global __pool
     __pool = await aiomysql.create_pool(
-        host=kw.get('host', 'localhost'),
+        host=kw.get('host', 'rm-xxx.mysql.rds.aliyuncs.com'),
         port=kw.get('port', 3306),
         user=kw['user'],
         password=kw['password'],
@@ -161,6 +161,8 @@ remove 方法用于从数据库中删除对象。
 '''
 class Model(dict, metaclass=ModelMetaclass):
 
+    __pool = None  # Define __pool as a class variable
+
     def __init__(self, **kw):
         super(Model, self).__init__(**kw)
 
@@ -172,6 +174,23 @@ class Model(dict, metaclass=ModelMetaclass):
 
     def __setattr__(self, key, value):
         self[key] = value
+
+    @classmethod
+    async def create_pool(cls, **kw):
+        if cls.__pool is not None:
+            return
+        logging.info('create database connection pool...')
+        cls.__pool = await aiomysql.create_pool(
+            host=kw.get('host', 'rm-xxx.mysql.rds.aliyuncs.com'),
+            port=kw.get('port', 3306),
+            user=kw['user'],
+            password=kw['password'],
+            db=kw['db'],
+            charset=kw.get('charset', 'utf8'),
+            autocommit=kw.get('autocommit', True),
+            maxsize=kw.get('maxsize', 10),
+            minsize=kw.get('minsize', 1),
+        )
 
     def getValue(self, key):
         return getattr(self, key, None)
