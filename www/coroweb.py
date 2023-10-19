@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__author__ = 'chang'
+__author__ = 'Chang'
 
 import asyncio, os, inspect, logging, functools
 
@@ -151,7 +151,12 @@ def add_route(app, fn):
     if path is None or method is None:
         raise ValueError('@get or @post not defined in %s.' % str(fn))
     if not asyncio.iscoroutinefunction(fn) and not inspect.isgeneratorfunction(fn):
-        fn = asyncio.coroutine(fn)
+        # fn = asyncio.coroutine(fn)
+        def adapted_handler(request):
+            async def wrapped_handler():
+                return await fn(request)
+
+            fn = wrapped_handler
     logging.info('add route %s %s => %s(%s)' % (method, path, fn.__name__, ', '.join(inspect.signature(fn).parameters.keys())))
     app.router.add_route(method, path, RequestHandler(app, fn))
 

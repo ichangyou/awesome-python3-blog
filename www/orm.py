@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__author__ = 'ChangYou'
+__author__ = 'Chang'
 
 import asyncio, logging
 
 import aiomysql
+
+class MyCustomError(BaseException):
+    pass
 
 def log(sql, args=()):
     logging.info('SQL: %s' % sql)
@@ -14,7 +17,7 @@ async def create_pool(loop, **kw):
     logging.info('create database connection pool...')
     global __pool
     __pool = await aiomysql.create_pool(
-        host=kw.get('host', 'rm-xxx.mysql.rds.aliyuncs.com'),
+        host=kw.get('host', 'localhost'),
         port=kw.get('port', 3306),
         user=kw['user'],
         password=kw['password'],
@@ -26,22 +29,33 @@ async def create_pool(loop, **kw):
         loop=loop
     )
 
+
 async def select(sql, args, size=None):
     log(sql, args)
     global __pool
-    async with __pool.get() as conn:
+    async with __pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute(sql.replace('?', '%s'), args or ())
             if size:
                 rs = await cur.fetchmany(size)
             else:
                 rs = await cur.fetchall()
-        logging.info('rows returned: %s' % len(rs))
-        return rs
+            logging.info('rows returned: %s' % len(rs))
+    return rs
+
+    # async with __pool.get() as conn:
+    #     async with conn.cursor(aiomysql.DictCursor) as cur:
+    #         await cur.execute(sql.replace('?', '%s'), args or ())
+    #         if size:
+    #             rs = await cur.fetchmany(size)
+    #         else:
+    #             rs = await cur.fetchall()
+    #     logging.info('rows returned: %s' % len(rs))
+    #     return rs
 
 async def execute(sql, args, autocommit=True):
     log(sql)
-    async with __pool.get() as conn:
+    async with __pool.acquire() as conn:
         if not autocommit:
             await conn.begin()
         try:
@@ -55,6 +69,21 @@ async def execute(sql, args, autocommit=True):
                 await conn.rollback()
             raise
         return affected
+
+    # async with __pool.get() as conn:
+    #     if not autocommit:
+    #         await conn.begin()
+    #     try:
+    #         async with conn.cursor(aiomysql.DictCursor) as cur:
+    #             await cur.execute(sql.replace('?', '%s'), args)
+    #             affected = cur.rowcount
+    #         if not autocommit:
+    #             await conn.commit()
+    #     except BaseException as e:
+    #         if not autocommit:
+    #             await conn.rollback()
+    #         raise
+    #     return affected
 
 def create_args_string(num):
     L = []
@@ -98,21 +127,17 @@ class TextField(Field):
     def __init__(self, name=None, default=None):
         super().__init__(name, 'text', False, default)
 
-
-class MyCustomError(BaseException):
-    pass
-
-
 # ModelMetaclass 是一个元类（metaclass），它继承自Python内置的type类
 # 元类在Python中用于控制类的创建行为。这里，它的主要作用是定义数据库表的结构，并在 Model 类的子类中进行一些初始化工作
 class ModelMetaclass(type):
+
     '''
-    __new__ 方法中，它会解析 Model 子类的属性，识别哪些属性是数据库表的字段。
-    然后，它会为每个字段构建相关的SQL查询语句，以及处理数据库表的主键。
-    元类会根据 Model 子类的属性生成一些特殊属性，例如 __mappings__ 用于映射字段名和字段类型，
-    __table__ 用于存储表名，__primary_key__ 用于存储主键字段名，以及其他查询操作的SQL语句，
-    如 __select__, __insert__, __update__, 和 __delete__。
-    如果在 Model 子类中没有定义主键字段，或者定义了多个主键字段，它会抛出一个自定义异常 MyCustomError
+       __new__ 方法中，它会解析 Model 子类的属性，识别哪些属性是数据库表的字段。
+       然后，它会为每个字段构建相关的SQL查询语句，以及处理数据库表的主键。
+       元类会根据 Model 子类的属性生成一些特殊属性，例如 __mappings__ 用于映射字段名和字段类型，
+       __table__ 用于存储表名，__primary_key__ 用于存储主键字段名，以及其他查询操作的SQL语句，
+       如 __select__, __insert__, __update__, 和 __delete__。
+       如果在 Model 子类中没有定义主键字段，或者定义了多个主键字段，它会抛出一个自定义异常 MyCustomError
     '''
     def __new__(cls, name, bases, attrs):
         if name=='Model':
@@ -161,8 +186,6 @@ remove 方法用于从数据库中删除对象。
 '''
 class Model(dict, metaclass=ModelMetaclass):
 
-    __pool = None  # Define __pool as a class variable
-
     def __init__(self, **kw):
         super(Model, self).__init__(**kw)
 
@@ -174,23 +197,6 @@ class Model(dict, metaclass=ModelMetaclass):
 
     def __setattr__(self, key, value):
         self[key] = value
-
-    @classmethod
-    async def create_pool(cls, **kw):
-        if cls.__pool is not None:
-            return
-        logging.info('create database connection pool...')
-        cls.__pool = await aiomysql.create_pool(
-            host=kw.get('host', 'rm-xxx.mysql.rds.aliyuncs.com'),
-            port=kw.get('port', 3306),
-            user=kw['user'],
-            password=kw['password'],
-            db=kw['db'],
-            charset=kw.get('charset', 'utf8'),
-            autocommit=kw.get('autocommit', True),
-            maxsize=kw.get('maxsize', 10),
-            minsize=kw.get('minsize', 1),
-        )
 
     def getValue(self, key):
         return getattr(self, key, None)
